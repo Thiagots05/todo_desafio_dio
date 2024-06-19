@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'dart:io';
+import 'package:get/get_state_manager/get_state_manager.dart';
+import 'package:get/instance_manager.dart';
+import 'package:todo_desafio_dio/controller/task_controller.dart';
 import 'dart:async';
 import 'dart:convert';
+
+import 'package:todo_desafio_dio/repository/task_repository.dart';
 
 void main() {
   runApp(const MaterialApp(
@@ -20,22 +23,26 @@ class Home extends StatefulWidget {
 }
 
 class _HomeState extends State<Home> {
-  List _toDoList = [];
+  List<Map<String, dynamic>> _toDoList = <Map<String, dynamic>>[];
   final _toDoController = TextEditingController();
   Map<String, dynamic>? _lastRemoved;
   int? _lastRemovedPos;
   double status = 0.0;
+  TaskRepository taskRepository = TaskRepository();
+  TaskController taskController = Get.put(TaskController());
 
   @override
   void initState() {
     super.initState();
 
-    _readData().then((data) {
-      setState(() {
-        _toDoList = json.decode(data!);
-        _atualizaStatus();
-      });
-    });
+    taskController.getTasks();
+
+    // taskRepository.readData().then((data) {
+    //   setState(() {
+    //     _toDoList = json.decode(data!);
+    //     _atualizaStatus();
+    //   });
+    // });
   }
 
   void _atualizaStatus() {
@@ -59,7 +66,7 @@ class _HomeState extends State<Home> {
       _toDoController.text = "";
       newToDo["ok"] = false;
       _toDoList.add(newToDo);
-      _saveData();
+      taskRepository.saveData(_toDoList);
       _atualizaStatus();
     });
   }
@@ -74,7 +81,7 @@ class _HomeState extends State<Home> {
         } else if (!a["ok"] && b["ok"]){
           return -1;
         }else{
-        _saveData();
+        taskRepository.saveData(_toDoList);
           return 0;
         } 
       });
@@ -88,7 +95,7 @@ class _HomeState extends State<Home> {
     return Scaffold(
         appBar: AppBar(
           title:
-              Text("Lista de tarefas   -  ${status.toStringAsFixed(1)} %"),
+              Obx(()=> Text("Lista de tarefas   -  ${taskController.status.value.toStringAsFixed(1)} %")),
           centerTitle: true,
           backgroundColor: Colors.blueAccent,
         ),
@@ -108,19 +115,19 @@ class _HomeState extends State<Home> {
                   ),
                   ElevatedButton(
                     style: ButtonStyle(backgroundColor: WidgetStatePropertyAll(Colors.blueAccent[400], ), foregroundColor: const WidgetStatePropertyAll(Colors.white)),
-                    onPressed: _addToDo,
+                    onPressed: ()=> taskController.addToDo(_toDoController.text),
                     child: const Text("ADD"),
                   )
                 ],
               )),
           Expanded(
               child: RefreshIndicator(
-            onRefresh: _refresh,
-            child: ListView.builder(
+            onRefresh: ()=>taskController.refreshList(), //_refresh,
+            child: Obx(()=>ListView.builder(
                 padding: const EdgeInsets.only(top: 10.0),
-                itemCount: _toDoList.length,
+                itemCount: taskController.toDoList.length,
                 itemBuilder: buildItem),
-          ))
+          )))
         ]));
   }
 
@@ -138,27 +145,30 @@ class _HomeState extends State<Home> {
         ),
       ),
       direction: DismissDirection.startToEnd,
-      child: CheckboxListTile(
+      child: GetBuilder<TaskController>(builder:(_)=> CheckboxListTile(
           onChanged: (c) {
-            setState(() {
-              _toDoList[index]["ok"] = c;
-              _atualizaStatus();
-              _saveData();
-            });
+            taskController.toDoList[index]['ok'] = c;
+            taskController.atualizaStatus();
+            taskController.saveTasks();
+            // setState(() {
+            //   _toDoList[index]["ok"] = c;
+            //   _atualizaStatus();
+            //   taskRepository.saveData(_toDoList);
+            // });
           },
-          title: Text(_toDoList[index]["title"]),
-          value: _toDoList[index]["ok"],
+          title: Text(taskController.toDoList[index]["title"]),
+          value: taskController.toDoList[index]["ok"],
           secondary: CircleAvatar(
               backgroundColor:
-                  _toDoList[index]["ok"] ? Colors.green : Colors.blueAccent,
-                  child: Icon(_toDoList[index]["ok"] ? Icons.check : Icons.error),),),
+                  taskController.toDoList[index]["ok"] ? Colors.green : Colors.blueAccent,
+                  child: Icon(taskController.toDoList[index]["ok"] ? Icons.check : Icons.error),),),),
       onDismissed: (direction) {
         setState(() {
           _lastRemoved = Map.from(_toDoList[index]);
           _lastRemovedPos = index;
           _toDoList.removeAt(index);
           _atualizaStatus();
-          _saveData();
+          taskRepository.saveData(_toDoList);
 
           final snack = SnackBar(
             content: Text("Tarefa \"${_lastRemoved!["title"]} \" removida!"),
@@ -166,8 +176,8 @@ class _HomeState extends State<Home> {
                 label: "Desfazer",
                 onPressed: () {
                   setState(() {
-                    _toDoList.insert(_lastRemovedPos!, _lastRemoved);
-                    _saveData();
+                    _toDoList.insert(_lastRemovedPos!, _lastRemoved!);
+                    taskRepository.saveData(_toDoList);
                   });
                 }),
             duration: const Duration(seconds: 2),
@@ -181,24 +191,4 @@ class _HomeState extends State<Home> {
     );
   }
 
-  Future<File> _getFile() async {
-    final directory = await getApplicationDocumentsDirectory();
-    debugPrint(directory.path);
-    return File("${directory.path}/data.json");
-  }
-
-  Future<File> _saveData() async {
-    String data = json.encode(_toDoList);
-    final file = await _getFile();
-    return file.writeAsString(data);
-  }
-
-  Future<String?> _readData() async {
-    try {
-      final file = await _getFile();
-      return file.readAsString();
-    } catch (e) {
-      return null;
-    }
-  }
 }
